@@ -1,0 +1,19 @@
+# FastAPI and ASGI server
+fastapi[all]==0.118.2
+uvicorn[standard]==0.30.6
+
+# Google Maps client
+googlemaps==4.10.0
+
+# Data validation
+pydantic==2.9.2
+pydantic-settings==2.5.2
+
+# Environment variables
+python-dotenv==1.0.1
+
+# HTTP client
+httpx==0.27.2
+
+# Utilities
+python-multipart>=0.0.18
