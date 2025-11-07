@@ -3,10 +3,12 @@
 from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 from app.config import Settings, get_settings
 from app.routers import maps
 from app.models import HealthResponse
 import logging
+import os
 
 # Configure logging
 logging.basicConfig(

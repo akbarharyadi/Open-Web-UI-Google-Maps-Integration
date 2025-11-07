@@ -1,8 +1,8 @@
 """
 title: Google Maps Integration
 author: HeyPico Team
-version: 1.0.0
-description: Search for places, get directions, and view locations using Google Maps API. Provides intelligent place search, detailed location information, turn-by-turn directions, and geocoding services.
+version: 2.0.0
+description: Search for places, get directions, and view locations using Google Maps API with embedded interactive maps. Displays results with inline Google Maps showing markers, routes, and locations directly in chat. Provides intelligent place search, detailed location information, turn-by-turn directions, and geocoding services.
 requirements: requests
 """
 
@@ -18,43 +18,184 @@ class Tools:
     """Google Maps tool for Open WebUI."""
 
     class Valves(BaseModel):
-        """Configuration for Google Maps tool."""
+        """Configuration for Google Maps tool.
+
+        Environment Variables:
+        - BACKEND_API_URL: Backend API URL for tool-to-backend communication (Docker hostname)
+        - BROWSER_API_URL: Browser-accessible API URL for maps display (localhost)
+        """
 
         BACKEND_API_URL: str = Field(
             default="http://fastapi-backend:8000/api/maps",
-            description="FastAPI backend URL for Google Maps API"
+            description="Backend API URL for tool-to-backend communication (uses Docker hostname)"
+        )
+        BROWSER_API_URL: str = Field(
+            default="http://localhost:8000/api/maps",
+            description="Browser-accessible API URL for maps display (uses localhost for image access)"
         )
         MAX_RESULTS_DISPLAY: int = Field(
             default=5,
-            description="Maximum number of results to display to user"
+            description="Maximum number of results to display to user (1-20 recommended)"
         )
         REQUEST_TIMEOUT: int = Field(
             default=15,
-            description="API request timeout in seconds"
+            description="API request timeout in seconds (5-30 recommended)"
         )
         INCLUDE_MAP_LINKS: bool = Field(
             default=True,
             description="Include clickable Google Maps links in responses"
         )
+        SHOW_MAP_IMAGES: bool = Field(
+            default=True,
+            description="Include static map images in responses (displays directly in chat)"
+        )
+        SHOW_INTERACTIVE_MAPS: bool = Field(
+            default=True,
+            description="Include interactive map embeds with fallback links"
+        )
+        MAP_WIDTH: int = Field(
+            default=600,
+            description="Width of map images in pixels (400-800 recommended)"
+        )
+        MAP_HEIGHT: int = Field(
+            default=400,
+            description="Height of map images in pixels (300-600 recommended)"
+        )
 
     def __init__(self):
         """Initialize Google Maps tool with configuration."""
-        self.valves = self.Valves(
-            **{
-                "BACKEND_API_URL": os.getenv(
-                    "BACKEND_API_URL",
-                    "http://fastapi-backend:8000/api/maps"
-                )
-            }
-        )
+        self.valves = self.Valves()
         # Enable citation to show tool context in responses
         self.citation = True
+
+    def update_valves(self, **kwargs):
+        """Update valves configuration from Open WebUI interface."""
+        for key, value in kwargs.items():
+            if hasattr(self.valves, key):
+                setattr(self.valves, key, value)
+
+    def _backend_embed_src(self, endpoint: str, params: Dict[str, Any]) -> str:
+        """
+        Build a backend proxy URL for embed/static endpoints.
+        endpoint: endpoint name under BACKEND_API_URL (e.g., 'embed' or 'static')
+        params: dict of query params
+        Returns the backend endpoint to be used as image URL.
+        """
+        # Build query string
+        from urllib.parse import urlencode
+
+        # Use appropriate base URL depending on endpoint type
+        if endpoint in ["static-image", "embed-redirect"]:
+            # These need to be accessible from browser - use BROWSER_API_URL (localhost)
+            base = self.valves.BROWSER_API_URL.rstrip("/")
+        elif endpoint == "embed":
+            # For embed, call API from tool (Docker hostname)
+            base = self.valves.BACKEND_API_URL.rstrip("/")
+        else:
+            # API calls from tool to backend - use BACKEND_API_URL (Docker hostname)
+            base = self.valves.BACKEND_API_URL.rstrip("/")
+
+        query = urlencode(params)
+        return f"{base}/{endpoint}?{query}"
+
+    def _generate_map_image(self, places: List[Dict], center_location: Optional[str] = None) -> str:
+        """Generate a static map image showing multiple locations via backend proxy (no key in client)."""
+        if not self.valves.SHOW_MAP_IMAGES or not places:
+            return ""
+
+        # Center on first place if available, else center_location string
+        first_place = places[0]
+        center_lat = first_place['location']['lat']
+        center_lng = first_place['location']['lng']
+        center = f"{center_lat},{center_lng}"
+
+        # Build markers param correctly for Google Static Maps API
+        # Format: markers=color:red|label:1|lat,lng&markers=color:red|label:2|lat,lng&...
+        marker_params = []
+        for i, place in enumerate(places[:self.valves.MAX_RESULTS_DISPLAY], 1):
+            loc = place['location']
+            # Create each marker parameter without encoding (backend will handle encoding)
+            marker_param = f"markers=color:red|label:{i}|{loc['lat']},{loc['lng']}"
+            marker_params.append(marker_param)
+
+        # Join all marker params with '&' (this creates the full markers string for the URL)
+        markers_param = "&".join(marker_params)
+
+        # Build backend static map URL (server will add key)
+        params = {
+            "markers": markers_param,
+            "width": self.valves.MAP_WIDTH,
+            "height": self.valves.MAP_HEIGHT,
+            "q": center  # fallback center param
+        }
+        # Use the image endpoint directly (no need to call both static and static-image)
+        image_url = self._backend_embed_src("static-image", params)
+        # Also provide a direct Google Maps link as fallback
+        google_maps_url = f"https://www.google.com/maps/search/?api=1&query={center}"
+
+        return f"\n![Map showing search results]({image_url})\n\n🔗 [**View on Google Maps**](https://www.google.com/maps/search/?api=1&query={center})\n"
+
+    def _generate_directions_image(self, origin: str, destination: str, route_data: Dict) -> str:
+        """Generate a static map image showing route via backend proxy."""
+        if not self.valves.SHOW_MAP_IMAGES:
+            return ""
+
+        start_loc = route_data.get('start_location', {})
+        end_loc = route_data.get('end_location', {})
+        if not start_loc or not end_loc:
+            return ""
+
+        # Build markers and optional path param (encode path as "lat,lng|lat,lng")
+        marker_params = [
+            f"markers=color:green|label:A|{start_loc['lat']},{start_loc['lng']}",
+            f"markers=color:red|label:B|{end_loc['lat']},{end_loc['lng']}"
+        ]
+        # Join marker params with '&' (backend will handle URL encoding)
+        markers_param = "&".join(marker_params)
+        # Build path param as simple start|end (server can render polyline)
+        path_param = f"{start_loc['lat']},{start_loc['lng']}|{end_loc['lat']},{end_loc['lng']}"
+
+        params = {
+            "markers": markers_param,
+            "path": path_param,
+            "width": self.valves.MAP_WIDTH,
+            "height": self.valves.MAP_HEIGHT,
+            "q": f"{start_loc['lat']},{start_loc['lng']}"
+        }
+        src = self._backend_embed_src("static", params)
+        # Use direct image endpoint for better Open WebUI compatibility
+        image_url = self._backend_embed_src("static-image", params)
+        return f"\n![Route map from {origin} to {destination}]({image_url})\n"
+
+    def _generate_location_image(self, lat: float, lng: float, label: str = "") -> str:
+        """Generate a static map image showing a single location via backend proxy."""
+        if not self.valves.SHOW_MAP_IMAGES:
+            return ""
+
+        params = {
+            "q": f"{lat},{lng}",
+            "width": self.valves.MAP_WIDTH,
+            "height": self.valves.MAP_HEIGHT
+        }
+        label_text = f" - {label}" if label else ""
+        # Use the image endpoint directly (no need to call both static and static-image)
+        image_url = self._backend_embed_src("static-image", params)
+        return f"\n![Location map{label_text}]({image_url})\n"
+
+    def _generate_location_embed(self, lat: float, lng: float, label: str = "") -> str:
+        """Generate a clickable Google Maps link."""
+        # Create a direct Google Maps URL
+        google_maps_url = f"https://www.google.com/maps/search/?api=1&query={lat},{lng}"
+        label_text = f" - {label}" if label else ""
+
+        return f'\n🔗 [**View on Google Maps**{label_text}]({google_maps_url})\n'
 
     def search_places(
         self,
         query: str,
         location: Optional[str] = None,
-        radius: int = 5000
+        radius: int = 5000,
+        __event_emitter__=None
     ) -> str:
         """
         Search for places like restaurants, cafes, gas stations, attractions, etc.
@@ -66,10 +207,14 @@ class Tools:
         - "Show me gas stations within 2 miles of Central Park"
         - "What are the best sushi places in San Francisco?"
 
+        IMPORTANT: The output contains formatted markdown with static map images and clickable links.
+        You MUST return the complete output exactly as provided, including all markdown
+        formatting and emojis. Do NOT summarize or rewrite.
+
         :param query: What to search for (e.g., "pizza restaurants", "coffee shops", "hospitals")
         :param location: Center location for search (e.g., "New York, NY", "Times Square")
         :param radius: Search radius in meters (default: 5000, max: 50000)
-        :return: Formatted list of places with names, addresses, ratings, and Google Maps links
+        :return: Formatted list of places with names, addresses, ratings, embedded map, and Google Maps links
         """
         try:
             # Prepare request
@@ -80,16 +225,23 @@ class Tools:
             }
 
             # Call backend API
-            response = requests.post(
-                f"{self.valves.BACKEND_API_URL}/search",
-                json=payload,
-                timeout=self.valves.REQUEST_TIMEOUT
-            )
+            api_url = f"{self.valves.BACKEND_API_URL}/search"
+            try:
+                response = requests.post(
+                    api_url,
+                    json=payload,
+                    timeout=self.valves.REQUEST_TIMEOUT
+                )
+            except requests.exceptions.RequestException as e:
+                return f"❌ Network error connecting to backend: {str(e)}\nAPI URL: {api_url}\nBackend URL: {self.valves.BACKEND_API_URL}"
 
             # Handle errors
             if response.status_code != 200:
-                error_detail = response.json().get('detail', 'Unknown error')
-                return f"❌ Error searching for places: {error_detail}"
+                try:
+                    error_detail = response.json().get('detail', 'Unknown error')
+                except:
+                    error_detail = response.text[:200]
+                return f"❌ Error searching for places (HTTP {response.status_code}): {error_detail}"
 
             # Parse response
             data = response.json()
@@ -136,7 +288,15 @@ class Tools:
 
             # Add footer
             if len(places) > display_count:
-                output.append(f"\n_({len(places) - display_count} more results available)_")
+                output.append(f"\n_({len(places) - display_count} more results available)_\n")
+
+            # Add static map view
+            map_image = self._generate_map_image(places[:display_count], location)
+            if map_image:
+                output.append("\n## 🗺️ Map View\n")
+                output.append(map_image)
+
+            # Note: Static map with markers and clickable links are provided above
 
             return "".join(output)
 
@@ -246,10 +406,14 @@ class Tools:
         - "Give me directions from Brooklyn to Manhattan"
         - "Show me the walking route from Central Park to MoMA"
 
+        IMPORTANT: The output contains formatted markdown and embedded HTML route map.
+        You MUST return the complete output exactly as provided, including all markdown
+        formatting, emojis, and HTML iframe elements. Do NOT summarize or rewrite.
+
         :param origin: Starting point (address, place name, or coordinates)
         :param destination: Ending point (address, place name, or coordinates)
         :param mode: Travel mode - "driving", "walking", "bicycling", or "transit"
-        :return: Turn-by-turn directions with distance, duration, and Google Maps link
+        :return: Turn-by-turn directions with distance, duration, embedded route map, and Google Maps link
         """
         try:
             # Validate mode
@@ -320,6 +484,12 @@ class Tools:
             if self.valves.INCLUDE_MAP_LINKS and data.get('google_maps_url'):
                 output.append(f"🗺️ [View full route on Google Maps]({data['google_maps_url']})\n")
 
+            # Add route map image
+            map_image = self._generate_directions_image(origin, destination, route)
+            if map_image:
+                output.append("\n## 🗺️ Route Map\n")
+                output.append(map_image)
+
             return "".join(output)
 
         except requests.Timeout:
@@ -336,8 +506,12 @@ class Tools:
         - "What are the coordinates of the Eiffel Tower?"
         - "Give me the latitude and longitude of Times Square"
 
+        IMPORTANT: The output contains formatted markdown and embedded HTML location map.
+        You MUST return the complete output exactly as provided, including all markdown
+        formatting, emojis, and HTML iframe elements. Do NOT summarize or rewrite.
+
         :param address: Address or place name to geocode
-        :return: Formatted address with coordinates and Google Maps link
+        :return: Formatted address with coordinates, embedded location map, and Google Maps link
         """
         try:
             # Prepare request
@@ -377,6 +551,8 @@ class Tools:
                 maps_url = f"https://www.google.com/maps?q={loc['lat']},{loc['lng']}"
                 if self.valves.INCLUDE_MAP_LINKS:
                     output.append(f"   🔗 [View on Map]({maps_url})\n")
+
+            # Note: Individual map links are already provided in each result above
 
             return "".join(output)
 

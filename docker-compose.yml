@@ -1,0 +1,124 @@
+services:
+  # Ollama - LLM inference engine
+  # ollama:
+  #   image: ollama/ollama:latest
+  #   container_name: heypico-ollama
+  #   ports:
+  #     - "11434:11434"
+  #   volumes:
+  #     - C:\Users\akbar\.ollama\models:/root/.ollama/models
+  #   networks:
+  #     - heypico-network
+  #   restart: unless-stopped
+  #   healthcheck:
+  #     test: ["CMD-SHELL", "ollama list >/dev/null 2>&1 || exit 1"]
+  #     interval: 30s
+  #     timeout: 10s
+  #     retries: 3
+  #     start_period: 40s
+    # Uncomment for NVIDIA GPU support
+    # environment:
+    #   - NVIDIA_VISIBLE_DEVICES=all
+    #   - NVIDIA_DRIVER_CAPABILITIES=compute,utility,graphics
+    # device_requests:
+    #   - driver: nvidia
+    #     count: -1
+    #     capabilities: [gpu]
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
+
+  # FastAPI Backend - Google Maps API proxy
+  fastapi-backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: heypico-backend
+    ports:
+      - "8000:8000"
+    environment:
+      - GOOGLE_MAPS_API_KEY_FILE=/run/secrets/google_maps_api_key
+      - CORS_ORIGINS=http://localhost:3000
+      - APP_NAME=HeyPico Maps API
+      - LOG_LEVEL=INFO
+    secrets:
+      - google_maps_api_key
+    networks:
+      - heypico-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    # depends_on:
+    #   ollama:
+    #     condition: service_healthy
+
+  # Open WebUI - Main user interface
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:main
+    container_name: heypico-webui
+    ports:
+      - "3000:8080"
+    environment:
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - WEBUI_NAME=HeyPico Maps AI
+      - ENABLE_SIGNUP=true
+      - DEFAULT_MODELS=llama3.2:latest
+      - ENABLE_RAG=false
+      - ENABLE_WEB_SEARCH=false
+      - BACKEND_API_URL=http://fastapi-backend:8000/api/maps
+      - BROWSER_API_URL=http://localhost:8000/api/maps
+      - ENABLE_IFRAME_SANDBOX=false
+      - DEFAULT_LOCALE=en-US
+      - SHOW_MESSAGE_DURATION=0
+      - WEBUI_IFRAME_ORIGINS=*
+      - WEBUI_SCRIPT_ALLOW=*
+      - IFRAME_SANDBOX_ALLOW_SCRIPTS=true
+      - IFRAME_SANDBOX_ALLOW_SAME_ORIGIN=true
+      - ALLOWED_HOSTS=*
+      - XDG_CONFIG_HOME=/app/backend/data
+    volumes:
+      - open_webui_data:/app/backend/data
+      - ./open-webui/tools:/app/backend/data/tools:ro
+      - ./open-webui/static:/app/backend/static:ro
+    networks:
+      - heypico-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    depends_on:
+      # ollama:
+      #   condition: service_healthy
+      fastapi-backend:
+        condition: service_healthy
+
+# Docker secrets for secure API key storage
+secrets:
+  google_maps_api_key:
+    file: ./secrets/google_maps_api_key.txt
+
+# Persistent volumes
+volumes:
+  ollama_data:
+    driver: local
+  open_webui_data:
+    driver: local
+
+# Custom network for service isolation
+networks:
+  heypico-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16
