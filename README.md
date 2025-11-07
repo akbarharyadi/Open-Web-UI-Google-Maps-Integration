@@ -1,4 +1,4 @@
-# HeyPico Google Maps Integration
+# Open Web UI Google Maps Integration
 
 An AI-powered Google Maps integration system that enables seamless location search, directions, and map visualization within Open WebUI chat interface with secure API key management and embedded static maps.
 
@@ -102,7 +102,7 @@ This system solves the problem of integrating Google Maps functionality into AI 
 1. **Clone the repository**
    ```bash
    git clone <repository-url>
-   cd HeyPico
+   cd Open-Web-UI-Google-Maps-Integration
    ```
 
 2. **Set up API key**
@@ -170,11 +170,11 @@ This system solves the problem of integrating Google Maps functionality into AI 
 - `BACKEND_API_URL` - Backend API URL for tool-to-backend communication (default: `http://fastapi-backend:8000/api/maps`)
 - `BROWSER_API_URL` - Browser-accessible API URL for maps display (default: `http://localhost:8000/api/maps`)
 - `CORS_ORIGINS` - Allowed CORS origins (default: `http://localhost:3000`)
-- `APP_NAME` - Application name (default: `HeyPico Maps API`)
+- `APP_NAME` - Application name (default: `Chat Maps API`)
 - `LOG_LEVEL` - Logging level (default: `INFO`)
 
 ### Open WebUI Configuration
-- `WEBUI_NAME` - Display name for the web interface (default: `HeyPico Maps AI`)
+- `WEBUI_NAME` - Display name for the web interface (default: `Chat Maps AI`)
 - `ENABLE_SIGNUP` - Allow user registration (default: `true`)
 - `DEFAULT_MODELS` - Default AI models to use (default: `llama3.2:latest`)
 - `ENABLE_RAG` - Enable retrieval-augmented generation (default: `false`)
@@ -238,7 +238,7 @@ curl -X GET "http://localhost:8000/api/maps/static-image?q=37.7749,-122.4194&wid
    cat > .env << EOF
    GOOGLE_MAPS_API_KEY=${GOOGLE_MAPS_API_KEY}
    CORS_ORIGINS=https://yourdomain.com
-   APP_NAME=HeyPico Maps API
+   APP_NAME=Chat Maps API
    LOG_LEVEL=WARNING
    EOF
    ```

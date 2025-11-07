@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 # Create FastAPI application
 app = FastAPI(
-    title="HeyPico Maps API",
+    title="Chat Maps API",
     description="Google Maps integration for Open WebUI with local LLM",
     version="1.0.0",
     docs_url="/docs",
@@ -51,7 +51,7 @@ app.include_router(maps.router, prefix="/api/maps", tags=["maps"])
 async def root():
     """Root endpoint with API information."""
     return {
-        "message": "HeyPico Maps API",
+        "message": "Chat Maps API",
         "version": "1.0.0",
         "docs": "/docs",
         "redoc": "/redoc",
@@ -68,7 +68,7 @@ async def health_check(settings: Settings = Depends(get_settings)) -> HealthResp
     """
     return HealthResponse(
         status="healthy",
-        service="heypico-maps-api",
+        service="chat-maps-api",
         version="1.0.0",
         maps_api_configured=bool(settings.google_maps_api_key)
     )

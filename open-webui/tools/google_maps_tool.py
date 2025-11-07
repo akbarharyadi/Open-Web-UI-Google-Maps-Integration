@@ -1,6 +1,6 @@
 """
 title: Google Maps Integration
-author: HeyPico Team
+author: Chat Team
 version: 2.0.0
 description: Search for places, get directions, and view locations using Google Maps API with embedded interactive maps. Displays results with inline Google Maps showing markers, routes, and locations directly in chat. Provides intelligent place search, detailed location information, turn-by-turn directions, and geocoding services.
 requirements: requests

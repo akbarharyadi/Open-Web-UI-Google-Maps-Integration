@@ -10,7 +10,7 @@ class Settings(BaseModel):
     """Application settings with environment variable and secrets support."""
 
     # Application
-    app_name: str = Field(default="HeyPico Maps API")
+    app_name: str = Field(default="Chat Maps API")
     debug: bool = Field(default=False)
     log_level: str = Field(default="INFO")
 
